@@ -22,6 +22,7 @@ const removeKnownExtension = (filename: string) => {
         '.ksplat',
         '.splat',
         '.html',
+        '.glb',
         '.ply',
         '.sog',
         '.spz',
@@ -332,7 +333,8 @@ class ExportPopup extends Container {
                 ply: [compressRow, bandsRow, filenameRow],
                 splat: [filenameRow],
                 sog: [bandsRow, iterationsRow, filenameRow],
-                viewer: [viewerTypeRow, animationRow, loopRow, colorRow, fovRow, bandsRow, filenameRow]
+                viewer: [viewerTypeRow, animationRow, loopRow, colorRow, fovRow, bandsRow, filenameRow],
+                collision: [filenameRow]
             }[exportType];
 
             allRows.forEach((r) => {
@@ -361,6 +363,9 @@ class ExportPopup extends Container {
                     break;
                 case 'viewer':
                     updateExtension(viewerTypeSelect.value === 'html' ? '.html' : '.zip');
+                    break;
+                case 'collision':
+                    updateExtension('.glb');
                     break;
             }
 
@@ -497,6 +502,14 @@ class ExportPopup extends Container {
                 };
             };
 
+            const assembleCollisionOptions = () : SceneExportOptions => {
+                return {
+                    filename: filenameEntry.value,
+                    splatIdx: 'all',
+                    serializeSettings: { }
+                };
+            };
+
             return new Promise<null | SceneExportOptions>((resolve) => {
                 onCancel = () => {
                     resolve(null);
@@ -515,6 +528,9 @@ class ExportPopup extends Container {
                             break;
                         case 'viewer':
                             resolve(assembleViewerOptions());
+                            break;
+                        case 'collision':
+                            resolve(assembleCollisionOptions());
                             break;
                     }
                 };

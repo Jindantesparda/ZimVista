@@ -1,0 +1,90 @@
+[
+  {
+    "name": "Kotofuri Front Room",
+    "description": "Room capture with optional collision GLB.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_front_room.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Kotofuri Deck",
+    "description": "Outdoor dining deck area with warm ambient lighting.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_deck.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Kotofuri Pool Area",
+    "description": "Lodge swimming pool surrounded by tropical gardens.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_pool.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "The Boma Dining Area",
+    "description": "Traditional outdoor dining experience.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "boma_dining.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Victoria Falls Viewpoint",
+    "description": "Breathtaking overlook of the waterfall.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "vic_falls_viewpoint.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Zambezi River Bank",
+    "description": "Scenic river views and sunsets.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_deck.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Rainbow Falls Lookout",
+    "description": "Spectacular view of the falls with rainbow effects.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "vic_falls_viewpoint.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "The Lounge",
+    "description": "Cozy lounge area with fireplace and wooden decor.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_front_room.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "The Library",
+    "description": "Quiet reading room with African literature.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_front_room.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Kotofuri Garden Path",
+    "description": "Stone pathway through lush green gardens.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_pool.png",
+    "location": "Victoria Falls, Zimbabwe"
+  },
+  {
+    "name": "Sunset Terrace",
+    "description": "Elevated terrace overlooking the river at dusk.",
+    "splat": "kotofuri-front-room.splat",
+    "glb": "kotofuri-front-room.collision.splat.glb",
+    "thumbnail": "kotofuri_deck.png",
+    "location": "Victoria Falls, Zimbabwe"
+  }
+]

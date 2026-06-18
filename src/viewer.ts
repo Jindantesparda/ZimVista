@@ -10,7 +10,8 @@ import {
     createGraphicsDevice
 } from 'playcanvas';
 
-import { MappedReadFileSystem, loadGSplatData, validateGSplatData } from './io';
+import { BrowserFileSystem, MappedReadFileSystem, loadGSplatData, validateGSplatData } from './io';
+import { serializeCollisionGlb } from './splat-serialize';
 import { PCApp } from './pc-app';
 
 type LoadedEntity = Entity & { destroy?: () => void };
@@ -50,19 +51,308 @@ const exitViewerButton = document.getElementById('exit-viewer') as HTMLButtonEle
 const leaveViewerButton = document.getElementById('leave-viewer') as HTMLButtonElement;
 const showScenesButton = document.getElementById('show-scenes') as HTMLButtonElement;
 const closeScenesButton = document.getElementById('close-scenes') as HTMLButtonElement;
+const openSettingsButton = document.getElementById('open-settings') as HTMLButtonElement;
+const closeSettingsButton = document.getElementById('close-settings') as HTMLButtonElement;
+const exportCollisionButton = document.getElementById('export-collision') as HTMLButtonElement;
 const centerPanel = document.getElementById('center-panel') as HTMLElement;
+const settingsPanel = document.getElementById('settings-panel') as HTMLElement;
+const settingsToast = document.getElementById('settings-toast') as HTMLElement;
+let settingsToastTimer: number | null = null;
+let loadedSettingsFromStorage = false;
 const toggleGlbButton = document.getElementById('toggle-glb') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLElement;
 const uiRoot = document.getElementById('viewer-ui') as HTMLElement;
+const annotationPopup = document.getElementById('annotation-popup') as HTMLElement;
+const annotationModeLabel = document.getElementById('annotation-mode-label') as HTMLElement;
+const addAnnotationButton = document.getElementById('add-annotation-btn') as HTMLButtonElement;
+const drawArrowButton = document.getElementById('draw-arrow-btn') as HTMLButtonElement;
+const exportAnnotationsButton = document.getElementById('export-annotations') as HTMLButtonElement;
+const importAnnotationsButton = document.getElementById('import-annotations') as HTMLButtonElement;
+const importAnnotationsFile = document.getElementById('import-annotations-file') as HTMLInputElement;
+const annotationListContainer = document.getElementById('annotation-list') as HTMLElement;
 
 const setStatus = (message: string) => {
     statusEl.textContent = message;
 };
 
+type AnnotationMode = 'off' | 'note' | 'arrow';
+
+interface Annotation {
+    id: string;
+    sceneKey: string;
+    position: [number, number, number];
+    title: string;
+    note: string;
+    arrowDirection?: [number, number, number];
+    createdAt: string;
+}
+
+const annotationStorageKey = 'supersplat.walkthrough.annotations';
+let annotationMode: AnnotationMode = 'off';
+let annotations: Annotation[] = [];
+
+const getAnnotationSceneKey = () => {
+    return activeSceneKey || `${activeSplatId}|${activeGlbId}`;
+};
+
+const removeExtension = (filename: string) => filename.replace(/[#?].*$/, '').replace(/\.[^.]+$/, '');
+
+const loadAnnotationsStore = (): Record<string, Annotation[]> => {
+    try {
+        const raw = window.localStorage.getItem(annotationStorageKey);
+        return raw ? JSON.parse(raw) as Record<string, Annotation[]> : {};
+    } catch {
+        return {};
+    }
+};
+
+const saveAnnotationsStore = (store: Record<string, Annotation[]>) => {
+    try {
+        window.localStorage.setItem(annotationStorageKey, JSON.stringify(store));
+    } catch {
+        // ignore storage failures
+    }
+};
+
+const getAnnotationsForCurrentScene = (): Annotation[] => {
+    const store = loadAnnotationsStore();
+    return store[getAnnotationSceneKey()] ?? [];
+};
+
+const persistAnnotationsForCurrentScene = (updated: Annotation[]) => {
+    const store = loadAnnotationsStore();
+    store[getAnnotationSceneKey()] = updated;
+    saveAnnotationsStore(store);
+    annotations = updated;
+};
+
+const formatCoordinates = (position: [number, number, number]) =>
+    position.map((value) => value.toFixed(2)).join(', ');
+
+const refreshAnnotationPanel = () => {
+    annotations = getAnnotationsForCurrentScene();
+    if (!annotationListContainer) {
+        return;
+    }
+
+    if (annotations.length === 0) {
+        annotationListContainer.innerHTML = '<div class="annotation-empty">No annotations yet. Use Add Note or Draw Arrow to place one.</div>';
+        return;
+    }
+
+    annotationListContainer.innerHTML = annotations.map((annotation) => `
+        <article class="annotation-entry" data-id="${annotation.id}">
+            <div class="annotation-entry-title">
+                <span>${annotation.title}</span>
+                <button type="button" class="annotation-entry-view" data-id="${annotation.id}">View</button>
+            </div>
+            <div class="annotation-entry-meta">${annotation.arrowDirection ? 'Arrow' : 'Note'} · ${formatCoordinates(annotation.position)}</div>
+            ${annotation.note ? `<div class="annotation-entry-note">${annotation.note}</div>` : ''}
+        </article>
+    `).join('');
+};
+
+const setAnnotationMode = (mode: AnnotationMode) => {
+    annotationMode = mode;
+    if (!annotationModeLabel) {
+        return;
+    }
+    annotationModeLabel.textContent = `Mode: ${mode === 'off' ? 'Off' : mode === 'note' ? 'Note' : 'Draw Arrow'}`;
+    addAnnotationButton?.classList.toggle('active', mode === 'note');
+    drawArrowButton?.classList.toggle('active', mode === 'arrow');
+    if (mode !== 'off') {
+        showSettingsToast('Right-click the 3D view to place an annotation.');
+    }
+};
+
+const hideAnnotationPopup = () => {
+    if (!annotationPopup) {
+        return;
+    }
+    annotationPopup.classList.remove('visible');
+    annotationPopup.innerHTML = '';
+};
+
+const createAnnotationEditor = (position: [number, number, number], arrowDirection?: [number, number, number]) => {
+    if (!annotationPopup) {
+        return;
+    }
+
+    annotationPopup.dataset.position = JSON.stringify(position);
+    annotationPopup.dataset.arrow = arrowDirection ? JSON.stringify(arrowDirection) : '';
+    annotationPopup.dataset.mode = annotationMode;
+
+    annotationPopup.innerHTML = `
+        <div class="annotation-popup-shell">
+            <div class="annotation-popup-title">${annotationMode === 'arrow' ? 'New Arrow Annotation' : 'New Surface Note'}</div>
+            <div class="annotation-popup-meta">Location: ${formatCoordinates(position)}</div>
+            ${arrowDirection ? `<div class="annotation-popup-meta">Direction: ${formatCoordinates(arrowDirection)}</div>` : ''}
+            <label class="annotation-popup-field">
+                Title
+                <input id="annotation-title" type="text" placeholder="Describe this spot" />
+            </label>
+            <label class="annotation-popup-field">
+                Notes
+                <textarea id="annotation-note" placeholder="Add a note for this location..."></textarea>
+            </label>
+            <div class="annotation-popup-buttons">
+                <button type="button" class="secondary" data-action="cancel">Cancel</button>
+                <button type="button" class="primary" data-action="save">Save</button>
+            </div>
+        </div>
+    `;
+
+    annotationPopup.classList.add('visible');
+};
+
+const saveAnnotationFromPopup = () => {
+    if (!annotationPopup) {
+        return;
+    }
+
+    const positionData = annotationPopup.dataset.position;
+    if (!positionData) {
+        hideAnnotationPopup();
+        return;
+    }
+
+    const position = JSON.parse(positionData) as [number, number, number];
+    const arrowData = annotationPopup.dataset.arrow;
+    const arrowDirection = arrowData ? JSON.parse(arrowData) as [number, number, number] : undefined;
+    const titleInput = document.getElementById('annotation-title') as HTMLInputElement | null;
+    const noteInput = document.getElementById('annotation-note') as HTMLTextAreaElement | null;
+    const title = titleInput?.value.trim() || (annotationMode === 'arrow' ? 'Arrow annotation' : 'New annotation');
+    const note = noteInput?.value.trim() || '';
+
+    const annotation: Annotation = {
+        id: `annotation-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        sceneKey: getAnnotationSceneKey(),
+        position,
+        title,
+        note,
+        arrowDirection,
+        createdAt: new Date().toISOString()
+    };
+
+    annotations = [...annotations, annotation];
+    persistAnnotationsForCurrentScene(annotations);
+    refreshAnnotationPanel();
+    hideAnnotationPopup();
+    showSettingsToast('Annotation saved.');
+};
+
+const openAnnotationEditor = (position: [number, number, number], arrowDirection?: [number, number, number]) => {
+    createAnnotationEditor(position, arrowDirection);
+};
+
+const createRayFromScreen = (x: number, y: number) => {
+    const cam = camera.camera;
+    const near = new Vec3();
+    const far = new Vec3();
+    cam.screenToWorld(x, y, cam.nearClip, near);
+    cam.screenToWorld(x, y, cam.farClip, far);
+    return {
+        origin: camera.getPosition().clone(),
+        direction: far.sub(near).normalize()
+    };
+};
+
+const intersectRayTriangle = (origin: Vec3, direction: Vec3, a: Vec3, b: Vec3, c: Vec3) => {
+    const edge1 = scratchA.sub2(b, a);
+    const edge2 = scratchB.sub2(c, a);
+    const pvec = scratchC.cross(direction, edge2);
+    const det = edge1.dot(pvec);
+    if (Math.abs(det) < 1e-6) {
+        return null;
+    }
+
+    const invDet = 1 / det;
+    const tvec = scratchD.sub2(origin, a);
+    const u = tvec.dot(pvec) * invDet;
+    if (u < 0 || u > 1) {
+        return null;
+    }
+
+    const qvec = scratchE.cross(tvec, edge1);
+    const v = direction.dot(qvec) * invDet;
+    if (v < 0 || u + v > 1) {
+        return null;
+    }
+
+    const t = edge2.dot(qvec) * invDet;
+    if (t <= 0) {
+        return null;
+    }
+
+    return t;
+};
+
+const getSurfaceHit = (event: MouseEvent): { position: [number, number, number]; arrowDirection?: [number, number, number] } | null => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const { origin, direction } = createRayFromScreen(x, y);
+    let closestT: number | null = null;
+
+    if (collisionTriangles.length > 0) {
+        for (const triangle of collisionTriangles) {
+            const t = intersectRayTriangle(origin, direction, triangle.a, triangle.b, triangle.c);
+            if (t !== null && t > 0 && (closestT === null || t < closestT)) {
+                closestT = t;
+            }
+        }
+
+        if (closestT !== null) {
+            const hitPoint = origin.clone().add(direction.clone().mulScalar(closestT));
+            return {
+                position: [hitPoint.x, hitPoint.y, hitPoint.z],
+                arrowDirection: [direction.x, direction.y, direction.z]
+            };
+        }
+    }
+
+    const surfaceY = splatEntity ? ((splatEntity as any).gsplat?.asset?.resource?.aabb?.getMin().y ?? 0) : 0;
+    if (Math.abs(direction.y) < 1e-6) {
+        return null;
+    }
+
+    const t = (surfaceY - origin.y) / direction.y;
+    if (t > 0) {
+        const hitPoint = origin.clone().add(direction.clone().mulScalar(t));
+        return {
+            position: [hitPoint.x, hitPoint.y, hitPoint.z],
+            arrowDirection: [direction.x, direction.y, direction.z]
+        };
+    }
+
+    return null;
+};
+
+const handleAnnotationClick = (event: MouseEvent) => {
+    event.preventDefault();
+
+    if (annotationMode === 'off') {
+        return;
+    }
+
+    if (!splatEntity && !glbEntity) {
+        showSettingsToast('Load a scene first to place annotations.');
+        return;
+    }
+
+    const hit = getSurfaceHit(event);
+    if (!hit) {
+        showSettingsToast('No surface hit. Aim at a visible scene surface and try again.');
+        return;
+    }
+
+    openAnnotationEditor(hit.position, annotationMode === 'arrow' ? hit.arrowDirection : undefined);
+};
+
 interface SceneEntry {
     name: string;
     description?: string;
-    splat: string;
+     splat: string;
     glb?: string;
     thumbnail?: string;
 }
@@ -84,6 +374,271 @@ const defaultSceneManifest: SceneEntry[] = [
 ];
 
 const sceneList = document.getElementById('scene-list') as HTMLElement;
+const settingsStorageKey = 'supersplat.walkthrough.settings';
+const lastSceneStorageKey = 'supersplat.walkthrough.lastScene';
+
+interface ViewerSettings {
+    qualityPreset: 'auto' | 'low' | 'medium' | 'high' | 'ultra';
+    renderScale: number;
+    showCollisionMesh: boolean;
+    showCrosshair: boolean;
+    uiAnimations: boolean;
+    walkSpeed: number;
+    sprintSpeed: number;
+    mouseSensitivity: number;
+    invertYAxis: boolean;
+    startInFlyMode: boolean;
+    showHud: boolean;
+    autoHideUi: boolean;
+    showHelpHints: boolean;
+    showSceneInfoCard: boolean;
+    defaultSceneView: 'grid' | 'list';
+    fpsCounter: boolean;
+    coordinates: boolean;
+    debugOverlay: boolean;
+    rememberLastScene: boolean;
+    restoreSpawnPoint: boolean;
+}
+
+const defaultSettings: ViewerSettings = {
+    qualityPreset: 'auto',
+    renderScale: 1,
+    showCollisionMesh: true,
+    showCrosshair: true,
+    uiAnimations: true,
+    walkSpeed: 2.4,
+    sprintSpeed: 4.8,
+    mouseSensitivity: 1.0,
+    invertYAxis: false,
+    startInFlyMode: false,
+    showHud: true,
+    autoHideUi: true,
+    showHelpHints: true,
+    showSceneInfoCard: true,
+    defaultSceneView: 'grid',
+    fpsCounter: false,
+    coordinates: false,
+    debugOverlay: false,
+    rememberLastScene: false,
+    restoreSpawnPoint: true
+};
+
+let viewerSettings: ViewerSettings = defaultSettings;
+
+const loadViewerSettings = (): ViewerSettings => {
+    try {
+        const raw = window.localStorage.getItem(settingsStorageKey);
+        if (!raw) {
+            loadedSettingsFromStorage = false;
+            return { ...defaultSettings };
+        }
+
+        const parsed = JSON.parse(raw) as Partial<ViewerSettings>;
+        loadedSettingsFromStorage = true;
+        return { ...defaultSettings, ...parsed };
+    } catch {
+        loadedSettingsFromStorage = false;
+        return { ...defaultSettings };
+    }
+};
+
+const saveViewerSettings = () => {
+    try {
+        window.localStorage.setItem(settingsStorageKey, JSON.stringify(viewerSettings));
+    } catch {
+        // ignore storage failures
+    }
+};
+
+const showSettingsToast = (message: string) => {
+    if (!settingsToast) {
+        return;
+    }
+
+    settingsToast.textContent = message;
+    settingsToast.classList.add('visible');
+
+    if (settingsToastTimer !== null) {
+        window.clearTimeout(settingsToastTimer);
+    }
+
+    settingsToastTimer = window.setTimeout(() => {
+        settingsToast.classList.remove('visible');
+        settingsToastTimer = null;
+    }, 3000);
+};
+
+const saveLastSceneEntry = (scene: SceneEntry) => {
+    try {
+        window.localStorage.setItem(lastSceneStorageKey, JSON.stringify(scene));
+    } catch {
+        // ignore storage failures
+    }
+};
+
+const getLastSceneEntry = (): SceneEntry | null => {
+    try {
+        const raw = window.localStorage.getItem(lastSceneStorageKey);
+        return raw ? JSON.parse(raw) as SceneEntry : null;
+    } catch {
+        return null;
+    }
+};
+
+const settingsPanelOpen = () => {
+    settingsPanel.classList.remove('is-hidden');
+    settingsPanel.setAttribute('aria-hidden', 'false');
+};
+const settingsPanelClose = () => {
+    settingsPanel.classList.add('is-hidden');
+    settingsPanel.setAttribute('aria-hidden', 'true');
+};
+
+const applySettings = () => {
+    document.body.classList.toggle('no-auto-hide', !viewerSettings.autoHideUi);
+    document.getElementById('hud')!.style.display = viewerSettings.showHud ? 'flex' : 'none';
+    document.getElementById('help')!.style.display = viewerSettings.showHelpHints ? 'flex' : 'none';
+    const infoCard = document.querySelector('.info-card') as HTMLElement;
+    if (infoCard) {
+        infoCard.style.display = viewerSettings.showSceneInfoCard ? 'flex' : 'none';
+    }
+    const crosshair = document.getElementById('crosshair') as HTMLElement;
+    if (crosshair) {
+        crosshair.style.opacity = viewerSettings.showCrosshair ? '0.85' : '0';
+    }
+    if (viewerSettings.showCollisionMesh && glbEntity) {
+        setGlbVisible(true);
+    }
+    if (!viewerSettings.showCollisionMesh && glbEntity) {
+        setGlbVisible(false);
+    }
+    document.getElementById('scene-list')?.classList.toggle('list-view', viewerSettings.defaultSceneView === 'list');
+    document.getElementById('scene-list')?.classList.toggle('grid-view', viewerSettings.defaultSceneView === 'grid');
+    const debugOverlay = document.getElementById('debug-overlay') as HTMLElement | null;
+    if (debugOverlay) {
+        debugOverlay.classList.toggle('visible', viewerSettings.debugOverlay || viewerSettings.fpsCounter || viewerSettings.coordinates);
+    }
+    moveSpeed = viewerSettings.walkSpeed;
+    if (viewerSettings.startInFlyMode) {
+        flyMode = true;
+    }
+};
+
+const updateSettingsUI = () => {
+    viewerSettings = loadViewerSettings();
+    saveViewerSettings();
+
+    const fillInput = (id: string, value: string | number | boolean) => {
+        const el = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+        if (!el) return;
+        if (el.type === 'checkbox') {
+            (el as HTMLInputElement).checked = Boolean(value);
+        } else if (el.type === 'radio') {
+            const radios = document.querySelectorAll<HTMLInputElement>(`input[name="${el.name}"][value="${value}"]`);
+            radios.forEach(r => r.checked = true);
+        } else {
+            el.value = String(value);
+        }
+    };
+
+    fillInput('setting-quality', viewerSettings.qualityPreset);
+    fillInput('setting-render-scale', viewerSettings.renderScale);
+    fillInput('setting-show-collision', viewerSettings.showCollisionMesh);
+    fillInput('setting-show-crosshair', viewerSettings.showCrosshair);
+    fillInput('setting-ui-animations', viewerSettings.uiAnimations);
+    fillInput('setting-walk-speed', viewerSettings.walkSpeed);
+    fillInput('setting-sprint-speed', viewerSettings.sprintSpeed);
+    fillInput('setting-mouse-sensitivity', viewerSettings.mouseSensitivity);
+    fillInput('setting-invert-y', viewerSettings.invertYAxis);
+    fillInput('setting-start-fly', viewerSettings.startInFlyMode);
+    fillInput('setting-show-hud', viewerSettings.showHud);
+    fillInput('setting-auto-hide-ui', viewerSettings.autoHideUi);
+    fillInput('setting-show-help', viewerSettings.showHelpHints);
+    fillInput('setting-show-scene-info', viewerSettings.showSceneInfoCard);
+    const defaultSceneRadio = document.querySelector<HTMLInputElement>(`input[name="defaultSceneView"][value="${viewerSettings.defaultSceneView}"]`);
+    if (defaultSceneRadio) {
+        defaultSceneRadio.checked = true;
+    }
+    fillInput('setting-fps-counter', viewerSettings.fpsCounter);
+    fillInput('setting-coordinates', viewerSettings.coordinates);
+    fillInput('setting-debug-overlay', viewerSettings.debugOverlay);
+    fillInput('setting-remember-last-scene', viewerSettings.rememberLastScene);
+    fillInput('setting-restore-spawn-point', viewerSettings.restoreSpawnPoint);
+    applySettings();
+};
+
+const setViewerSetting = <K extends keyof ViewerSettings>(key: K, value: ViewerSettings[K]) => {
+    viewerSettings[key] = value;
+    saveViewerSettings();
+    applySettings();
+    showSettingsToast('Settings saved.');
+};
+
+const loadViewerSettingsIntoUI = () => {
+    viewerSettings = loadViewerSettings();
+    updateSettingsUI();
+
+    if (loadedSettingsFromStorage) {
+        showSettingsToast('Settings restored from last session.');
+    }
+};
+
+const getSettingValue = (target: HTMLInputElement | HTMLSelectElement): string | number | boolean => {
+    if (target.type === 'checkbox') {
+        return (target as HTMLInputElement).checked;
+    }
+    if (target.type === 'radio') {
+        return (target as HTMLInputElement).value;
+    }
+    if (target.type === 'range' || target.type === 'number') {
+        return target.valueAsNumber || Number(target.value);
+    }
+    if (target.tagName.toLowerCase() === 'select') {
+        return target.value;
+    }
+    return target.value;
+};
+
+const applyInputSetting = (target: HTMLInputElement | HTMLSelectElement) => {
+    const settingKey = target.dataset.setting as keyof ViewerSettings | undefined;
+    if (!settingKey || !(settingKey in viewerSettings)) {
+        return;
+    }
+
+    const value = getSettingValue(target);
+    if (typeof viewerSettings[settingKey] === 'boolean') {
+        setViewerSetting(settingKey, Boolean(value) as any);
+    } else if (typeof viewerSettings[settingKey] === 'number') {
+        setViewerSetting(settingKey, Number(value) as any);
+    } else {
+        setViewerSetting(settingKey, value as any);
+    }
+};
+
+const initSettingsInputs = () => {
+    settingsPanel.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-setting]').forEach((element) => {
+        element.addEventListener('change', (event) => {
+            applyInputSetting(event.target as HTMLInputElement | HTMLSelectElement);
+        });
+    });
+};
+
+const loadLastSceneIfNeeded = async () => {
+    if (!viewerSettings.rememberLastScene || hasSceneQueryParams()) {
+        return;
+    }
+
+    const lastScene = getLastSceneEntry();
+    if (lastScene) {
+        try {
+            await loadSceneFromEntry(lastScene);
+        } catch {
+            // ignore load failures and keep the dashboard
+        }
+    }
+};
+
+const getDefaultSceneView = () => viewerSettings.defaultSceneView;
 
 const hasSceneQueryParams = () => {
     const params = new URLSearchParams(window.location.search);
@@ -205,7 +760,7 @@ const getPersistableScenePath = (path: string) => {
 
 const isInteractiveTarget = (target: EventTarget | null) => {
     return target instanceof HTMLElement &&
-        !!target.closest('button, input, label, select, textarea, a');
+        !!target.closest('button, input, label, select, textarea, a, .annotation-popup');
 };
 
 const extensionOf = (name: string) => name.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase() ?? '';
@@ -721,6 +1276,7 @@ const addSplatData = (filename: string, gsplatData: any) => {
 
     applySavedSpawnIfAny();
     syncSceneControls();
+    refreshAnnotationPanel();
 };
 
 const loadSplatFromFile = async (file: File) => {
@@ -734,6 +1290,7 @@ const loadSplatFromFile = async (file: File) => {
     addSplatData(file.name, gsplatData);
     setStatus(`Loaded ${file.name}. Load a GLB to enable physical walking collisions.`);
     loaderPanel.classList.add('is-hidden');
+    toggleScenesPanel(false);
 };
 
 const loadSplatFromUrl = async (url: string) => {
@@ -747,6 +1304,7 @@ const loadSplatFromUrl = async (url: string) => {
     addSplatData(url, gsplatData);
     setStatus(`Loaded ${url}. Load a GLB to enable physical walking collisions.`);
     loaderPanel.classList.add('is-hidden');
+    toggleScenesPanel(false);
 };
 
 const loadGlbFromUrl = async (url: string, filename = url) => {
@@ -788,6 +1346,7 @@ const loadGlbFromUrl = async (url: string, filename = url) => {
         `No readable mesh triangles found. Floor fallback ${fallbackGroundY === null ? 'unavailable; fly mode remains on' : 'enabled'}.`;
     syncGlbVisibilityButton();
     syncSceneControls();
+    refreshAnnotationPanel();
     if (!applySavedSpawnIfAny()) {
         setStatus(`Loaded ${filename}. ${physicsMessage}`);
     }
@@ -812,9 +1371,16 @@ const loadSceneFromEntry = async (scene: SceneEntry) => {
 
         activeSceneKey = sceneEntryKey(scene);
         renderSceneList(currentSceneCatalog);
-        loaderPanel.classList.add('is-hidden');
+
         toggleScenesPanel(false);
+
+        loaderPanel.classList.add('is-hidden');
         syncSceneControls();
+        refreshAnnotationPanel();
+
+        if (viewerSettings.rememberLastScene) {
+            saveLastSceneEntry(scene);
+        }
     } catch (error) {
         console.error(error);
         setStatus(`Failed to load scene ${scene.name}: ${(error instanceof Error ? error.message : String(error))}`);
@@ -1007,7 +1573,10 @@ const loadSceneList = async () => {
     }
 };
 
-void loadSceneList();
+void loadSceneList().then(() => {
+    loadViewerSettingsIntoUI();
+    void loadLastSceneIfNeeded();
+});
 
 const loadSelectedFiles = async () => {
     try {
@@ -1028,7 +1597,6 @@ const loadSelectedFiles = async () => {
         }
 
         loaderPanel.classList.add('is-hidden');
-        toggleScenesPanel(false);
         syncSceneControls();
     } catch (error) {
         console.error(error);
@@ -1051,9 +1619,6 @@ const tryLoadDroppedFiles = async (files: FileList) => {
         }
         if (!splatFile && !glbFile) {
             setStatus('Drop a .splat/.ply/.sog file and optionally a .glb file.');
-        }
-        if (splatFile || glbFile) {
-            toggleScenesPanel(false);
         }
     } catch (error) {
         console.error(error);
@@ -1111,12 +1676,17 @@ const exitViewer = () => {
     }
 
     loaderPanel.classList.remove('is-hidden');
-    toggleScenesPanel(true);
+    centerPanel.classList.add('is-hidden');
     setStatus('Exited scene view. Pick a scene from the dashboard or load files.');
 };
 
 const toggleScenesPanel = (show: boolean) => {
     centerPanel.classList.toggle('is-hidden', !show);
+
+    if (show && document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+    }
+
     if (show) {
         setStatus('Scene browser open. Double-click a scene to load it.');
     } else {
@@ -1211,15 +1781,131 @@ clearSpawnButton.addEventListener('click', clearSpawnPose);
 registerSceneButton.addEventListener('click', registerCurrentScene);
 exitViewerButton.addEventListener('click', exitViewer);
 leaveViewerButton.addEventListener('click', exitViewer);
-showScenesButton.addEventListener('click', () => toggleScenesPanel(true));
+showScenesButton.addEventListener('click', () => {
+    if (document.pointerLockElement === canvas) {
+        document.exitPointerLock();
+    }
+
+    toggleScenesPanel(true);
+});
 closeScenesButton.addEventListener('click', () => toggleScenesPanel(false));
 toggleGlbButton.addEventListener('click', () => {
     setGlbVisible(!glbVisible);
 });
+openSettingsButton.addEventListener('click', () => {
+    settingsPanelOpen();
+});
+closeSettingsButton.addEventListener('click', () => {
+    settingsPanelClose();
+});
+settingsPanel.addEventListener('click', (event) => {
+    if (event.target === settingsPanel) {
+        settingsPanelClose();
+    }
+});
+settingsPanel.querySelectorAll<HTMLButtonElement>('.settings-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+        settingsPanel.querySelectorAll<HTMLButtonElement>('.settings-tab').forEach(btn => btn.classList.remove('active'));
+        settingsPanel.querySelectorAll<HTMLElement>('.settings-pane').forEach(pane => pane.classList.remove('active'));
+        tab.classList.add('active');
+        const paneName = tab.dataset.tab;
+        const pane = settingsPanel.querySelector<HTMLElement>(`.settings-pane[data-pane="${paneName}"]`);
+        if (pane) {
+            pane.classList.add('active');
+        }
+    });
+});
+
+addAnnotationButton?.addEventListener('click', () => setAnnotationMode(annotationMode === 'note' ? 'off' : 'note'));
+drawArrowButton?.addEventListener('click', () => setAnnotationMode(annotationMode === 'arrow' ? 'off' : 'arrow'));
+exportAnnotationsButton?.addEventListener('click', () => {
+    const data = JSON.stringify(getAnnotationsForCurrentScene(), null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `annotations-${getAnnotationSceneKey().replace(/[^a-z0-9-_]/gi, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+});
+
+exportCollisionButton?.addEventListener('click', async () => {
+    if (!splatEntity) {
+        setStatus('Load a splat file first to export collision GLB.');
+        return;
+    }
+
+    const resource = (splatEntity as any).gsplat?.asset?.resource as GSplatResource | undefined;
+    if (!resource) {
+        setStatus('Unable to access splat resource for export.');
+        return;
+    }
+
+    const splatData = resource.gsplatData;
+    const filename = `${removeExtension(activeSplatId || 'scene')}.collision.glb`;
+
+    setStatus('Exporting collision GLB...');
+    try {
+        await serializeCollisionGlb([{ splatData }] as any, { maxSHBands: 3 }, new BrowserFileSystem(filename), filename);
+        setStatus(`Collision GLB exported: ${filename}`);
+    } catch (error) {
+        console.error(error);
+        setStatus(`Collision export failed: ${(error instanceof Error ? error.message : String(error))}`);
+    }
+});
+importAnnotationsButton?.addEventListener('click', () => {
+    importAnnotationsFile?.click();
+});
+importAnnotationsFile?.addEventListener('change', async () => {
+    const file = importAnnotationsFile.files?.[0];
+    if (!file) {
+        return;
+    }
+    try {
+        const raw = await file.text();
+        const items = JSON.parse(raw) as Annotation[];
+        persistAnnotationsForCurrentScene(items);
+        refreshAnnotationPanel();
+        showSettingsToast('Annotations imported.');
+    } catch (error) {
+        console.error(error);
+        showSettingsToast('Failed to import annotations.');
+    } finally {
+        importAnnotationsFile.value = '';
+    }
+});
+annotationPopup?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement;
+    const action = target.dataset.action;
+    if (action === 'cancel') {
+        hideAnnotationPopup();
+    } else if (action === 'save') {
+        saveAnnotationFromPopup();
+    }
+});
+annotationListContainer?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement;
+    const id = target.dataset.id;
+    if (!id) {
+        return;
+    }
+    const selected = annotations.find((annotation) => annotation.id === id);
+    if (!selected) {
+        return;
+    }
+    const position = new Vec3(selected.position[0], selected.position[1] + 1.65, selected.position[2]);
+    camera.setPosition(position);
+    showSettingsToast(`Moved to annotation: ${selected.title}`);
+});
+
+initSettingsInputs();
 canvas.tabIndex = 0;
 canvas.addEventListener('click', (event) => {
     requestPointerLock(event);
 });
+canvas.addEventListener('contextmenu', handleAnnotationClick);
 uiRoot.addEventListener('click', (event) => {
     if (!isInteractiveTarget(event.target)) {
         requestPointerLock(event);
@@ -1377,6 +2063,19 @@ app.on('update', (dt: number) => {
         tempPosition.y += (y / length) * step;
         tempPosition.z += (z / length) * step;
         camera.setPosition(tempPosition);
+    }
+
+    const debugText = document.getElementById('debug-text');
+    if (debugText && (viewerSettings.debugOverlay || viewerSettings.coordinates)) {
+        const position = camera.getPosition();
+        const lines = [];
+        if (viewerSettings.coordinates) {
+            lines.push(`Position: ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
+        }
+        if (viewerSettings.debugOverlay) {
+            lines.push(`Fly mode: ${flyMode ? 'ON' : 'OFF'} | Speed: ${speed.toFixed(2)} m/s`);
+        }
+        debugText.textContent = lines.join(' | ');
     }
 });
 

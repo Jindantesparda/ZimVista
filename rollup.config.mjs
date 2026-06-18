@@ -55,7 +55,15 @@ const application = {
                         return contents.toString().replace('__BASE_HREF__', HREF);
                     }
                 },
+                {
+                    src: 'src/viewer.html',
+                    transform: (contents, filename) => {
+                        return contents.toString().replace('__BASE_HREF__', HREF);
+                    }
+                },
+                { src: 'src/viewer.css' },
                 { src: 'src/manifest.json' },
+                { src: 'scenes', dest: '.' },
                 { src: 'static/images', dest: 'static' },
                 { src: 'static/icons', dest: 'static' },
                 { src: 'static/lib', dest: 'static' },
@@ -98,6 +106,36 @@ const application = {
     cache: false
 };
 
+const viewer = {
+    input: 'src/viewer.ts',
+    output: {
+        dir: 'dist',
+        format: 'esm',
+        sourcemap: true
+    },
+    plugins: [
+        alias({
+            entries: {
+                'playcanvas': ENGINE_DIR,
+                '@playcanvas/pcui': PCUI_DIR
+            }
+        }),
+        typescript({
+            tsconfig: './tsconfig.json'
+        }),
+        resolve(),
+        json(),
+        BUILD_TYPE === 'release' &&
+        strip({
+            include: ['**/*.ts'],
+            functions: ['Debug.exec']
+        }),
+        BUILD_TYPE !== 'debug' && terser()
+    ],
+    treeshake: 'smallest',
+    cache: false
+};
+
 const serviceWorker = {
     input: 'src/sw.ts',
     output: {
@@ -117,5 +155,6 @@ const serviceWorker = {
 
 export default [
     application,
+    viewer,
     serviceWorker
 ];

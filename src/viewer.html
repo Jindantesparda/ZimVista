@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>ZIMVISTA - Explore Zimbabwe in 3D</title>
+        <meta charset="utf-8" />
+        <base href="__BASE_HREF__">
+        <link rel="stylesheet" href="./viewer.css">
+        <link rel="shortcut icon" href="#">
+        <meta name="description" content="A first-person walkthrough viewer for Gaussian splat spaces and optional GLB scene geometry." />
+        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+    </head>
+
+    <body>
+        <canvas id="viewer-canvas"></canvas>
+
+        <main id="viewer-ui">
+            <!-- TOP HEADER -->
+            <header id="viewer-header">
+                <div class="brand-panel">
+                    <div class="brand-mark">
+                        <svg class="logo-svg" viewBox="0 0 100 100" width="36" height="36" style="border-radius: 50%;">
+                            <defs>
+                                <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" stop-color="#ff9e00" />
+                                    <stop offset="100%" stop-color="#ff6000" />
+                                </linearGradient>
+                                <linearGradient id="waterGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" stop-color="#028090" />
+                                    <stop offset="100%" stop-color="#02c39a" />
+                                </linearGradient>
+                                <linearGradient id="mountainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" stop-color="#1b4332" />
+                                    <stop offset="100%" stop-color="#081c15" />
+                                </linearGradient>
+                            </defs>
+                            <circle cx="50" cy="50" r="48" fill="url(#skyGrad)" />
+                            <!-- Sun rays -->
+                            <path d="M 50 12 L 50 22 M 24 30 L 31 36 M 76 30 L 69 36 M 14 50 L 24 50 M 86 50 L 76 50" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.8" />
+                            <circle cx="50" cy="50" r="18" fill="#fff" />
+                            <!-- Mountain silhouettes -->
+                            <path d="M 8 72 L 38 48 L 68 70 L 92 72 Z" fill="url(#mountainGrad)" />
+                            <path d="M 28 76 L 58 56 L 78 72 L 92 76 Z" fill="#2d6a4f" opacity="0.8" />
+                            <path d="M 2 74 C 30 82, 70 82, 98 74 L 98 98 L 2 98 Z" fill="url(#waterGrad)" />
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="brand-title">ZIMVISTA</p>
+                        <p class="brand-subtitle">Explore Zimbabwe in 3D</p>
+                    </div>
+                </div>
+
+                <div id="help">
+                    <div class="help-key">
+                        <span class="key-name">WASD</span>
+                        <span class="key-action">Move</span>
+                    </div>
+                    <div class="help-key">
+                        <span class="key-name">Mouse</span>
+                        <span class="key-action">Look</span>
+                    </div>
+                    <div class="help-key">
+                        <span class="key-name">Shift</span>
+                        <span class="key-action">Sprint</span>
+                    </div>
+                    <div class="help-key">
+                        <span class="key-name">Space</span>
+                        <span class="key-action">Jump</span>
+                    </div>
+                    <div class="help-key">
+                        <span class="key-name">F</span>
+                        <span class="key-action">Fly Mode</span>
+                    </div>
+                    <div class="help-key">
+                        <span class="key-name">Esc</span>
+                        <span class="key-action">Release</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- MAIN WORKSPACE LAYOUT -->
+            <div class="viewer-layout">
+                
+                <!-- LEFT COLUMN: WALKTHROUGH VIEWER CONTROL -->
+                <section id="loader-panel" class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="panel-eyebrow">Walkthrough Viewer</p>
+                            <h1>Load a splat capture and optional GLB guide mesh, then click the view to walk around.</h1>
+                        </div>
+                    </div>
+
+                    <!-- QUICK SCENE SELECTION CARD -->
+                    <div class="quick-selection-section">
+                        <p class="section-title">QUICK SCENE SELECTION</p>
+                        <div id="quick-selection-card" class="selected-scene-card">
+                            <div class="card-thumb-container">
+                                <img id="quick-thumb" src="./scenes/kotofuri_front_room.png" alt="Kotofuri Front Room">
+                            </div>
+                            <div class="card-content">
+                                <h3 id="quick-title">KOTOFURI FRONT ROOM</h3>
+                                <p id="quick-desc">Room capture with optional collision GLB.</p>
+                                <div class="card-meta">
+                                    <div class="meta-item">
+                                        <span class="meta-dot splat-dot"></span>
+                                        <span id="quick-splat-file">Splat: kotofuri-front-room.splat</span>
+                                    </div>
+                                    <div class="meta-item">
+                                        <span class="meta-dot glb-dot"></span>
+                                        <span id="quick-glb-file">GLB: kotofuri-front-room.collision.splat.glb</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="explore-scene-btn" class="explore-btn" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10h-10V2z"/><path d="M12 12L2.7 16.5"/><path d="M12 12l9.3 4.5"/><path d="M18 20l-6-8-6 8"/></svg>
+                            Explore Scene
+                            <span class="chevron-right">&gt;</span>
+                        </button>
+                    </div>
+
+                    <!-- LOAD YOUR FILES PANEL -->
+                    <div class="load-files-section">
+                        <p class="section-title">LOAD YOUR FILES</p>
+                        
+                        <div class="file-row">
+                            <span class="file-row-label">SPLAT / PLY / SOG</span>
+                            <div class="custom-file-input">
+                                <button type="button" class="file-choose-btn" id="splat-trigger">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                    Choose File
+                                </button>
+                                <span class="file-status" id="splat-file-name">No file chosen</span>
+                                <input id="splat-input" type="file" accept=".splat,.ply,.sog,.json,.ksplat,.spz,.webp">
+                            </div>
+                        </div>
+
+                        <div class="file-row">
+                            <span class="file-row-label">GLB / GLTF (OPTIONAL)</span>
+                            <div class="custom-file-input">
+                                <button type="button" class="file-choose-btn" id="glb-trigger">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                    Choose File
+                                </button>
+                                <span class="file-status" id="glb-file-name">No file chosen</span>
+                                <input id="glb-input" type="file" accept=".glb,.gltf">
+                            </div>
+                        </div>
+
+                        <button id="load-files" type="button" class="primary load-files-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                            Load Files
+                        </button>
+                    </div>
+
+                    <!-- UTILITY ACTIONS ROW -->
+                    <div class="utility-actions">
+                        <button id="save-spawn" type="button" title="Save Spawn Point">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Save Spawn
+                        </button>
+                        <button id="go-spawn" type="button" title="Go To Spawn Point">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                            Go To Spawn
+                        </button>
+                        <button id="clear-spawn" type="button" title="Clear Saved Spawn">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            Clear Spawn
+                        </button>
+                        <button id="register-scene" type="button" title="Register Current Loaded Space">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                            Register Scene
+                        </button>
+                        <button id="exit-viewer" type="button" class="ghost" title="Exit Walking Viewer">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                            Exit Viewer
+                        </button>
+                        <button id="toggle-glb" type="button" title="Toggle collision mesh visibility">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                            Hide GLB
+                        </button>
+                        <button id="export-collision" type="button" title="Export collision GLB">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l7 4v6c0 5-3 9-7 10-4-1-7-5-7-10V6l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
+                            Export Collision
+                        </button>
+                    </div>
+                </section>
+
+                <!-- CENTER COLUMN: ALL SCENES GRID -->
+                <section id="center-panel" class="scenes-panel is-hidden">
+                    <div class="dashboard-top">
+                        <div class="dashboard-top-left">
+                            <h2>ALL SCENES</h2>
+                            <button id="close-scenes" type="button" class="ghost small">Close</button>
+                        </div>
+                        <div class="view-filters">
+                            <span>View:</span>
+                            <button type="button" id="grid-view-btn" class="icon-button active" aria-label="Grid view">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                            </button>
+                            <button type="button" id="list-view-btn" class="icon-button" aria-label="List view">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="scene-list">
+                        <!-- Dynamic list of scenes will load here -->
+                        <div class="scenes-loading-placeholder">Loading scenes manifest...</div>
+                    </div>
+                </section>
+
+                <!-- RIGHT COLUMN: SELECTED DETAIL CARD & VERTICAL BAR -->
+                <section id="right-panel">
+                    <!-- Info overlay card -->
+                    <div class="info-card">
+                        <div class="info-icon-badge">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        </div>
+                        <div class="info-card-header">
+                            <h2 id="info-title">Kotofuri Lodge</h2>
+                            <p id="info-location">Victoria Falls, Zimbabwe</p>
+                        </div>
+                        <div class="info-card-body">
+                            <p id="info-desc">Experience the beauty of Zimbabwe through immersive 3D exploration. Walk freely, look around, and discover every detail.</p>
+                        </div>
+                        <button id="info-more-btn" class="info-more-btn" type="button">
+                            More Info
+                            <span class="chevron-right">&gt;</span>
+                        </button>
+                    </div>
+
+                    <!-- Vertical Action Toolbar -->
+                    <div class="vertical-toolbar">
+                        <button class="tool-btn" type="button" title="Toggle Minimap">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
+                            <span>Minimap</span>
+                        </button>
+                        <button class="tool-btn" type="button" title="View Info Points">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            <span>Info Points</span>
+                        </button>
+                        <button class="tool-btn" type="button" title="Manage Map Layers">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                            <span>Layers</span>
+                        </button>
+                        <button id="open-settings" class="tool-btn" type="button" title="System Settings">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <span>Settings</span>
+                        </button>
+                    </div>
+
+                    <div class="annotation-panel">
+                        <div class="annotation-header">
+                            <span>Annotations</span>
+                            <span id="annotation-mode-label">Mode: Off</span>
+                        </div>
+                        <div class="annotation-actions">
+                            <button id="add-annotation-btn" type="button" class="annotation-btn">Add Note</button>
+                            <button id="draw-arrow-btn" type="button" class="annotation-btn">Draw Arrow</button>
+                            <button id="export-annotations" type="button" class="annotation-btn">Export</button>
+                            <button id="import-annotations" type="button" class="annotation-btn">Import</button>
+                            <input id="import-annotations-file" type="file" accept="application/json" hidden>
+                        </div>
+                        <div id="annotation-list" class="annotation-list"></div>
+                    </div>
+                </section>
+
+                <section id="settings-panel" class="settings-panel is-hidden" aria-hidden="true">
+                    <div class="settings-shell panel">
+                        <div class="settings-header">
+                            <div>
+                                <p class="panel-eyebrow">Settings</p>
+                                <h1>Customize the walkthrough experience</h1>
+                            </div>
+                            <button id="close-settings" type="button" class="ghost small">×</button>
+                        </div>
+
+                        <div class="settings-tabs">
+                            <button type="button" data-tab="graphics" class="settings-tab active">Graphics</button>
+                            <button type="button" data-tab="movement" class="settings-tab">Movement</button>
+                            <button type="button" data-tab="interface" class="settings-tab">Interface</button>
+                            <button type="button" data-tab="advanced" class="settings-tab">Advanced</button>
+                        </div>
+
+                        <div class="settings-content">
+                            <div class="settings-pane active" data-pane="graphics">
+                                <label class="settings-row">
+                                    <span>Quality Preset</span>
+                                    <select id="setting-quality" data-setting="qualityPreset">
+                                        <option value="auto">Auto</option>
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                        <option value="ultra">Ultra</option>
+                                    </select>
+                                </label>
+                                <label class="settings-row">
+                                    <span>Render Scale</span>
+                                    <input id="setting-render-scale" data-setting="renderScale" type="range" min="0.5" max="2" step="0.1">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Show Collision Mesh</span>
+                                    <input id="setting-show-collision" data-setting="showCollisionMesh" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Show Crosshair</span>
+                                    <input id="setting-show-crosshair" data-setting="showCrosshair" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>UI Animations</span>
+                                    <input id="setting-ui-animations" data-setting="uiAnimations" type="checkbox">
+                                </label>
+                            </div>
+                            <div class="settings-pane" data-pane="movement">
+                                <label class="settings-row">
+                                    <span>Walk Speed</span>
+                                    <input id="setting-walk-speed" data-setting="walkSpeed" type="number" min="0.5" max="10" step="0.1">
+                                </label>
+                                <label class="settings-row">
+                                    <span>Sprint Speed</span>
+                                    <input id="setting-sprint-speed" data-setting="sprintSpeed" type="number" min="1" max="16" step="0.1">
+                                </label>
+                                <label class="settings-row">
+                                    <span>Mouse Sensitivity</span>
+                                    <input id="setting-mouse-sensitivity" data-setting="mouseSensitivity" type="number" min="0.1" max="5" step="0.1">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Invert Y Axis</span>
+                                    <input id="setting-invert-y" data-setting="invertYAxis" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Start In Fly Mode</span>
+                                    <input id="setting-start-fly" data-setting="startInFlyMode" type="checkbox">
+                                </label>
+                            </div>
+                            <div class="settings-pane" data-pane="interface">
+                                <label class="settings-row checkbox-row">
+                                    <span>Show HUD</span>
+                                    <input id="setting-show-hud" data-setting="showHud" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Auto Hide UI</span>
+                                    <input id="setting-auto-hide-ui" data-setting="autoHideUi" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Show Help Hints</span>
+                                    <input id="setting-show-help" data-setting="showHelpHints" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Show Scene Info Card</span>
+                                    <input id="setting-show-scene-info" data-setting="showSceneInfoCard" type="checkbox">
+                                </label>
+                                <label class="settings-row">
+                                    <span>Default Scene View</span>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="defaultSceneView" data-setting="defaultSceneView" value="grid"> Grid</label>
+                                        <label><input type="radio" name="defaultSceneView" data-setting="defaultSceneView" value="list"> List</label>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="settings-pane" data-pane="advanced">
+                                <label class="settings-row checkbox-row">
+                                    <span>FPS Counter</span>
+                                    <input id="setting-fps-counter" data-setting="fpsCounter" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Coordinates</span>
+                                    <input id="setting-coordinates" data-setting="coordinates" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Debug Overlay</span>
+                                    <input id="setting-debug-overlay" data-setting="debugOverlay" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Remember Last Scene</span>
+                                    <input id="setting-remember-last-scene" data-setting="rememberLastScene" type="checkbox">
+                                </label>
+                                <label class="settings-row checkbox-row">
+                                    <span>Restore Spawn Point</span>
+                                    <input id="setting-restore-spawn-point" data-setting="restoreSpawnPoint" type="checkbox">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+
+            <!-- BOTTOM HUD STATUS BAR -->
+            <section id="hud">
+                <button id="lock-pointer" type="button">
+                    <svg class="walk-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 21a6 6 0 0 0-12 0"/><circle cx="12" cy="10" r="4"/><path d="M12 2a10 10 0 0 0-10 10h20A10 10 0 0 0 12 2z"/></svg>
+                    Click To Walk
+                </button>
+                
+                <button id="show-scenes" class="glass-pill-button" type="button" title="Open Scene Browser">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M4 4H10V10H4V4Z M14 4H20V10H14V4Z M4 14H10V20H4V14Z M14 14H20V20H14V14Z"
+                    stroke="currentColor"
+                    stroke-width="2"/>
+                    </svg>
+                    <span>Scenes</span>
+                </button>
+                <button id="leave-viewer" type="button" class="ghost">Leave</button>
+                <div id="status-bar-container">
+                    <span class="pause-symbol">||</span>
+                    <span id="status">Paused. Click the view to continue.</span>
+                </div>
+            </section>
+
+            <div id="settings-toast" class="settings-toast" aria-live="polite"></div>
+            <div id="annotation-popup" class="annotation-popup" aria-live="polite"></div>
+            <div id="crosshair"></div>
+            <div id="debug-overlay">
+                <strong>Diagnostics</strong>
+                <div id="debug-text">FPS and coordinates will appear here.</div>
+            </div>
+        </main>
+
+        <script type="module" src="./viewer.js"></script>
+    </body>
+</html>

@@ -6,6 +6,7 @@ import {
     Transform,
     writeHtml,
     writeSog as writeSogInternal,
+    writeVoxel,
     ZipFileSystem,
     type FileSystem,
     type LogEvent,
@@ -1303,6 +1304,34 @@ const createProgressRenderer = (header: string, events?: Events): Renderer => ({
     }
 });
 
+const serializeCollisionGlb = async (splats: Splat[], serializeSettings: SerializeSettings, fs: FileSystem, filename = 'output.glb'): Promise<void> => {
+    splatTransformLogger.setRenderer(createProgressRenderer('Exporting Collision GLB'));
+
+    const dataTable = extractDataTable(splats, serializeSettings);
+    const tempFs = new MemoryFileSystem();
+
+    try {
+        await writeVoxel({
+            filename: 'output.voxel.json',
+            dataTable,
+            collisionMesh: true,
+            createDevice: createGpuDevice
+        }, tempFs);
+
+        const glbBytes = tempFs.results.get('output.collision.glb');
+        if (!glbBytes) {
+            throw new Error('Collision GLB was not generated');
+        }
+
+        const writer = await fs.createWriter(filename);
+        await writer.write(glbBytes);
+        await writer.close();
+    } catch (err) {
+        splatTransformLogger.unwindAll(true);
+        throw err;
+    }
+};
+
 const serializeViewer = async (splats: Splat[], serializeSettings: SerializeSettings, options: ViewerExportSettings, fs: FileSystem): Promise<void> => {
     const { experienceSettings, events } = options;
 
@@ -1401,6 +1430,7 @@ export {
     serializeSplat,
     serializeSog,
     serializeViewer,
+    serializeCollisionGlb,
     AnimTrack,
     CameraPose,
     Camera,

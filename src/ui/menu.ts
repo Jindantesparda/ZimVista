@@ -137,6 +137,11 @@ class Menu extends Container {
             isEnabled: () => !events.invoke('scene.empty'),
             onSelect: () => events.invoke('scene.export', 'sog')
         }, {
+            text: localize('menu.file.export.collision', { ellipsis: true }),
+            icon: createSvg(sceneExport),
+            isEnabled: () => !events.invoke('scene.empty'),
+            onSelect: () => events.invoke('scene.export', 'collision')
+        }, {
             // separator
         }, {
             text: localize('menu.file.export.viewer', { ellipsis: true }),
